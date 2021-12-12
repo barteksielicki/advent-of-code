@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from functools import lru_cache
 
 
 def fuel_cost_a(positions, target):
@@ -7,7 +6,9 @@ def fuel_cost_a(positions, target):
 
 
 def fuel_cost_b(positions, target):
-    return sum(sum(range(abs(pos - target) + 1)) for pos in positions)
+    def distance_cost(dist):
+        return dist * (dist + 1) / 2
+    return sum(distance_cost(abs(pos - target)) for pos in positions)
 
 
 if __name__ == "__main__":
