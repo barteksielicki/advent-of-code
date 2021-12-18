@@ -1,17 +1,7 @@
 #!/usr/bin/env python3
+import math
 import re
-from itertools import product
-
-
-def x_in_boundary(min_x, max_x, v_x, n_steps):
-    if v_x < n_steps:
-        return min_x <= (v_x * (v_x + 1) // 2) <= max_x
-    else:
-        return min_x <= ((v_x + v_x - n_steps + 1) * n_steps // 2) <= max_x
-
-
-def y_in_boundary(min_y, max_y, v_y, n_steps):
-    return min_y <= ((v_y + v_y - n_steps + 1) * n_steps // 2) <= max_y
+from itertools import product, chain
 
 
 if __name__ == "__main__":
@@ -28,8 +18,16 @@ if __name__ == "__main__":
 
     max_steps = abs(min_y) * 2
     possible_vectors = set()
+    v_x_that_converge_to_target = [x_vel for x_vel in range(max_x) if min_x <= (x_vel * (x_vel + 1) // 2) <= max_x]
     for n_steps in range(1, max_steps + 1):
-        x_values = (v_x for v_x in range(max_x + 1) if x_in_boundary(min_x, max_x, v_x, n_steps))
-        y_values = (v_y for v_y in range(min_y, y_velocity + 1) if y_in_boundary(min_y, max_y, v_y, n_steps))
+        min_v_x = math.ceil((min_x / n_steps) + ((n_steps - 1) / 2))
+        max_v_x = math.floor((max_x / n_steps) + ((n_steps - 1) / 2))
+        x_values = chain(
+            (v_x for v_x in range(min_v_x, max_v_x + 1) if v_x >= n_steps),
+            (v_x for v_x in v_x_that_converge_to_target if v_x < n_steps)
+        )
+        min_v_y = math.ceil((min_y / n_steps) + ((n_steps - 1) / 2))
+        max_v_y = math.floor((max_y / n_steps) + ((n_steps - 1) / 2))
+        y_values = range(min_v_y, max_v_y + 1)
         possible_vectors.update(product(x_values, y_values))
     print(f"Part B: {len(possible_vectors)}")
