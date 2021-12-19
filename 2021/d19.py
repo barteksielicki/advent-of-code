@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from collections import deque
 from itertools import combinations
 
 import numpy as np
@@ -33,19 +34,59 @@ POSSIBLE_ROTATIONS = [
 ]
 
 
+class Scanner:
+    def __init__(self, relative_beacon_positions):
+        self.relative_beacons = relative_beacon_positions
+        self.rotated_beacons = [
+            [np.dot(rotation, beacon) for beacon in relative_beacon_positions]
+            for rotation_idx, rotation in enumerate(POSSIBLE_ROTATIONS)
+        ]
+        self.beacon_characteristic = [
+            [
+                {tuple(beacon_a - beacon_b) for beacon_b in rotated_beacons}
+                for beacon_a in rotated_beacons
+            ]
+            for rotated_beacons in self.rotated_beacons
+        ]
+        self.position = None
+        self.correct_rotation = None
+
+    @property
+    def absolute_beacons(self):
+        if self.position is None:
+            raise Exception("Scanner not oriented!")
+        return [self.position + beacon for beacon in self.rotated_beacons[self.correct_rotation]]
+
+    def try_to_align_with(self, scanner):
+        for rotation in range(len(POSSIBLE_ROTATIONS)):
+            for beacon_a_idx, beacon_a_char in enumerate(self.beacon_characteristic[self.correct_rotation]):
+                for beacon_b_idx, beacon_b_char in enumerate(scanner.beacon_characteristic[rotation]):
+                    if len(beacon_a_char & beacon_b_char) >= 12:
+                        scanner_position = (
+                                self.position
+                                + self.rotated_beacons[self.correct_rotation][beacon_a_idx]
+                                - scanner.rotated_beacons[rotation][beacon_b_idx]
+                        )
+                        return rotation, scanner_position
+        return None, None
+
+    def manhattan_distance(self, scanner):
+        return sum(map(abs, self.position - scanner.position))
+
+
 def parse_scanners(lines):
     scanners = []
-    curr_scanner = None
+    beacons = None
     for line in lines:
         if not line:
             continue
         elif line.startswith("---"):
-            if curr_scanner:
-                scanners.append(curr_scanner)
-            curr_scanner = []
+            if beacons:
+                scanners.append(Scanner(beacons))
+            beacons = []
         else:
-            curr_scanner.append(np.array([int(n) for n in line.split(",")]))
-    scanners.append(curr_scanner)
+            beacons.append(np.array([int(n) for n in line.split(",")]))
+    scanners.append(Scanner(beacons))
     return scanners
 
 
@@ -53,61 +94,21 @@ if __name__ == "__main__":
     with open("inputs/input19.txt", "r") as f:
         lines = f.read().splitlines()
     scanners = parse_scanners(lines)
-    rotated_scanners = {}
-    beacon_relations = {}
-    for scanner_idx, scanner in enumerate(scanners):
-        for rotation_idx, rotation in enumerate(POSSIBLE_ROTATIONS):
-            rotated_scanner = [np.dot(rotation, beacon) for beacon in scanner]
-            rotated_scanners[(scanner_idx, rotation_idx)] = rotated_scanner
-            beacon_relations[(scanner_idx, rotation_idx)] = [
-                [beacon_a - beacon_b for beacon_b in rotated_scanner]
-                for beacon_a in rotated_scanner
-            ]
-    oriented_scanners = [0]
-    scanners_positions = {0: np.array([0, 0, 0])}
-    not_oriented_scanners = [i for i in range(1, len(scanners))]
-    oriented_beacons = set(tuple(beacon) for beacon in scanners[0])
-    checked_pairs = set()
-    while not_oriented_scanners:
-        should_break = False
-        for scanner_idx in not_oriented_scanners:
-            for oriented_scanner_idx in oriented_scanners:
-                pair = (scanner_idx, oriented_scanner_idx)
-                if pair in checked_pairs:
-                    continue
-                else:
-                    checked_pairs.add(pair)
-                oriented_scanner = scanners[oriented_scanner_idx]
-                for rotation_idx in range(len(POSSIBLE_ROTATIONS)):
-                    oriented_beacon_relations = beacon_relations[(oriented_scanner_idx, 0)]
-                    to_check_beacon_relations = beacon_relations[(scanner_idx, rotation_idx)]
-                    for beacon_a_idx, beacon_a_relations in enumerate(oriented_beacon_relations):
-                        for beacon_b_idx, beacon_b_relations in enumerate(to_check_beacon_relations):
-                            if len(set(tuple(v) for v in beacon_a_relations) & set(tuple(v) for v in beacon_b_relations)) >= 12:
-                                print(f"Found match: {scanner_idx} and {oriented_scanner_idx}")
-                                scanner_position = scanners_positions[oriented_scanner_idx] + oriented_scanner[beacon_a_idx] - rotated_scanners[(scanner_idx, rotation_idx)][beacon_b_idx]
-                                scanners_positions[scanner_idx] = scanner_position
-                                oriented_scanners.append(scanner_idx)
-                                scanners[scanner_idx] = rotated_scanners[(scanner_idx, rotation_idx)]
-                                beacon_relations[(scanner_idx, 0)] = to_check_beacon_relations
-                                for beacon in scanners[scanner_idx]:
-                                    oriented_beacons.add(tuple(beacon + scanner_position))
-                                should_break = True
-                                break
-                        if should_break:
-                            break
-                    if should_break:
-                        break
-                if should_break:
-                    break
-            if should_break:
-                oriented_scanners.append(scanner_idx)
-                not_oriented_scanners.remove(scanner_idx)
-                break
+
+    scanners[0].position = np.array([0, 0, 0])
+    scanners[0].correct_rotation = 0
+    oriented_beacons = set(tuple(beacon) for beacon in scanners[0].absolute_beacons)
+    queue = deque([scanners[0]])
+    while len(queue):
+        oriented_scanner = queue.popleft()
+        for scanner in filter(lambda s: s.position is None, scanners):
+            correct_rotation, scanner_position = oriented_scanner.try_to_align_with(scanner)
+            if scanner_position is not None:
+                scanner.correct_rotation = correct_rotation
+                scanner.position = scanner_position
+                oriented_beacons.update([tuple(beacon) for beacon in scanner.absolute_beacons])
+                queue.append(scanner)
+
     print(f"Answer A: {len(oriented_beacons)}")
-    max_distance = 0
-    for scanner_a_idx, scanner_b_idx in combinations(scanners_positions, 2):
-        x, y, z = scanners_positions[scanner_a_idx] - scanners_positions[scanner_b_idx]
-        distance = abs(x) + abs(y) + abs(z)
-        max_distance = max(distance, max_distance)
+    max_distance = max(scanner_a.manhattan_distance(scanner_b) for scanner_a, scanner_b in combinations(scanners, 2))
     print(f"Answer B: {max_distance}")
