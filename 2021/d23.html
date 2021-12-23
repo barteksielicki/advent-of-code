@@ -1,0 +1,152 @@
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
+    </head>
+    <body>
+        <div style="margin: 0 auto; width: 652px">
+            <canvas id="canvas" width="650" height="350" style=""></canvas>
+            <div style="display: flex; justify-content: space-between">
+                <p>Obecny koszt: <span id="currentCostSpan">0</span></p>
+                <p>Najniższy wynik: <span id="minCostSpan">-</span></p>
+            </div>
+        </div>
+    <script>
+        const canvas = document.getElementById("canvas")
+        const ctx = canvas.getContext("2d")
+        const currentCostSpan = document.getElementById("currentCostSpan")
+        const minCostSpan = document.getElementById("minCostSpan")
+        minCostSpan.innerText = window.localStorage.getItem("minCostSpan") || "-"
+        const startingPosition = [
+            ["#", "#", "#", "#", "#", "#", "#", "#", "#", "#", "#", "#", "#"],
+            ["#", " ", " ", " ", " ", " ", " ", " ", " ", " ", " ", " ", "#"],
+            ["#", "#", "#", "B", "#", "D", "#", "C", "#", "A", "#", "#", "#"],
+            [" ", " ", "#", "D", "#", "C", "#", "B", "#", "A", "#", " ", " "],
+            [" ", " ", "#", "D", "#", "B", "#", "A", "#", "C", "#", " ", " "],
+            [" ", " ", "#", "C", "#", "D", "#", "B", "#", "A", "#", " ", " "],
+            [" ", " ", "#", "#", "#", "#", "#", "#", "#", "#", "#", " ", " "]
+        ]
+        const colors = {
+            "#": "rgb(50,50,50)",
+            "A": "#ef476f",
+            "B": "#ffd166",
+            "C": "#06d6a0",
+            "D": "#118ab2"
+        }
+        const costTable = {
+            "A": 1,
+            "B": 10,
+            "C": 100,
+            "D": 1000
+        }
+        let board = _.cloneDeep(startingPosition)
+        let selectedTile = null
+        let possibleMoves = []
+        let totalCost = 0
+
+        // function rendering game state
+        const draw = function () {
+            // reset
+            ctx.clearRect(0, 0, 650, 350)
+            // board state
+            board.forEach((row, y) => {
+                row.forEach((cell, x) => {
+                    if (cell !== " ") {
+                        ctx.fillStyle = colors[cell]
+                        if (selectedTile && selectedTile.x === x && selectedTile.y === y) {
+                            ctx.fillRect(x * 50 + 6, y * 50 + 6, 38, 38)
+                        } else {
+                            ctx.fillRect(x * 50 + 2, y * 50 + 2, 46, 46)
+                        }
+                    }
+                })
+            })
+            // legend
+            const symbols = ["A", "B", "C", "D"]
+            symbols.forEach((symbol, idx) => {
+                ctx.fillStyle = colors[symbol]
+                ctx.fillRect((3 + idx * 2) * 50 + 15, 315, 20, 20)
+            })
+            // possible moves
+            possibleMoves.forEach(move => {
+                ctx.fillStyle = colors[board[selectedTile.y][selectedTile.x]]
+                ctx.font = "15px Arial";
+                ctx.fillText(move.cost.toString(), move.x * 50 + 10, move.y * 50 + 25)
+            })
+            // cost
+            currentCostSpan.innerText = totalCost
+        }
+
+        // calculate all possible moves
+        const calculateMoves = function () {
+            possibleMoves = []
+            const type = board[selectedTile.y][selectedTile.x]
+            const entranceX = 3 + 2 * ["A", "B", "C", "D"].indexOf(type)
+            if (selectedTile.y === 1) {
+                // is in corridor - can move only to its own chamber
+                const corridorSpace = _.range(Math.min(entranceX, selectedTile.x), Math.max(entranceX, selectedTile.x) + 1)
+                if (corridorSpace.every(x => board[1][x] === " " || x === selectedTile.x)) {
+                    const corridorDistance = Math.abs(entranceX - selectedTile.x)
+                    const chamberSpace = _.reverse(_.range(2, 6))
+                    if (chamberSpace.every(y => board[y][entranceX] === type || board[y][entranceX] === " ")) {
+                        possibleMoves = [chamberSpace.filter( y => board[y][entranceX] === " ")[0]].map(y => { return {
+                            x: entranceX, y: y, cost: (corridorDistance + y - 1) * costTable[type]
+                        }})
+                    }
+                }
+            } else if (selectedTile.x === entranceX && _.range(selectedTile.y + 1, 6).every(y => board[y][entranceX] === type)) {
+                // is in good chamber and shouldn't leave
+                possibleMoves = []
+            } else if (_.range(1, selectedTile.y).some(y => board[y][selectedTile.x] !== " ")) {
+                // somebody's blocking the exit
+                possibleMoves = []
+            } else {
+                // can move to corridor
+                const borderRight = _.range(selectedTile.x, 13).find(x => board[1][x] !== " ")
+                const borderLeft = _.reverse(_.range(0, selectedTile.x)).find(x => board[1][x] !== " ")
+                possibleMoves = _.range(borderLeft + 1, borderRight).filter(x => [3, 5, 7, 9].indexOf(x) === -1).map(x => {
+                    return {x: x, y: 1, cost: costTable[type] * (selectedTile.y - 1 + Math.abs(x - selectedTile.x))}
+                })
+            }
+        }
+
+        // check if game is won
+        const checkIfWon = function () {
+            if (_.range(2, 6).every(y => {board[y][3] === "A" && board[y][5] === "B" && board[y][7] === "C" && board[y][9] === "D"})) {
+                window.alert("Wygrałeś!. Wynik: " + totalCost.toString())
+                window.localStorage.setItem("minCostSpan", totalCost)
+                minCostSpan.innerText = totalCost
+            }
+        }
+
+
+        // click handler
+        canvas.addEventListener("click", event => {
+            let x = Math.floor((event.pageX - canvas.offsetLeft + canvas.clientLeft) / 50)
+            let y = Math.floor((event.pageY - canvas.offsetTop + canvas.clientTop) / 50)
+            if (selectedTile && selectedTile.x === x && selectedTile.y === y) {
+                selectedTile = null
+                possibleMoves = []
+            } else if (board[y][x] !== "#" && board[y][x] !== " ") {
+                selectedTile = {x, y}
+                calculateMoves()
+            } else if (selectedTile && board[y][x] === " ") {
+                possibleMoves.forEach(move => {
+                    if (move.y === y && move.x === x) {
+                        board[move.y][move.x] = board[selectedTile.y][selectedTile.x]
+                        board[selectedTile.y][selectedTile.x] = " "
+                        totalCost += move.cost
+                        selectedTile = null
+                        possibleMoves = []
+                    }
+                })
+            }
+            draw()
+            checkIfWon()
+        })
+
+        // start the game
+        draw()
+    </script>
+    </body>
+</html>
